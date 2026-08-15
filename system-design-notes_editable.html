@@ -1,0 +1,4998 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>System Design Notes — Editable</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+
+<style>
+:root{
+  --bg:#ffffff;
+  --bg-soft:#f6f7fb;
+  --bg-card:#ffffff;
+  --border:#e6e8f0;
+  --border-soft:#eef0f6;
+  --ink:#14161f;
+  --ink-dim:#5b6072;
+  --ink-faint:#9498a8;
+
+  --accent:#4f46e5;
+  --accent-soft:rgba(79,70,229,.07);
+  --accent-soft-2:rgba(79,70,229,.15);
+  --accent-2:#0ea5a4;
+  --accent-2-soft:rgba(14,165,164,.08);
+
+  --ok:#178a4c;
+  --ok-soft:rgba(23,138,76,.08);
+  --warn:#b45309;
+  --warn-soft:rgba(180,83,9,.08);
+  --bad:#c0362c;
+  --bad-soft:rgba(192,54,44,.08);
+
+  --mono:'JetBrains Mono',ui-monospace,monospace;
+  --sans:'Inter',system-ui,sans-serif;
+  --display:'Space Grotesk',var(--sans);
+  --sidebar-w:264px;
+}
+
+*{
+  box-sizing:border-box;
+}
+
+html{
+  scroll-behavior:smooth;
+}
+
+@media(prefers-reduced-motion:reduce){
+  html{
+    scroll-behavior:auto;
+  }
+}
+
+body{
+  margin:0;
+  background:var(--bg);
+  color:var(--ink);
+  font-family:var(--sans);
+  line-height:1.65;
+  -webkit-font-smoothing:antialiased;
+}
+
+a{
+  color:var(--accent);
+  text-decoration:none;
+}
+
+code{
+  font-family:var(--mono);
+  background:var(--accent-soft);
+  color:var(--accent);
+  padding:1px 6px;
+  border-radius:5px;
+  font-size:.85em;
+}
+
+::selection{
+  background:var(--accent-soft-2);
+}
+
+
+/* =========================================================
+   EDITOR TOOLBAR
+   ========================================================= */
+
+.editor-toolbar{
+  position:sticky;
+  top:0;
+  z-index:1000;
+
+  display:flex;
+  align-items:center;
+  gap:6px;
+  flex-wrap:wrap;
+
+  padding:10px 14px;
+
+  background:rgba(255,255,255,.96);
+  backdrop-filter:blur(12px);
+
+  border-bottom:1px solid var(--border);
+  box-shadow:0 2px 12px rgba(20,22,31,.06);
+}
+
+.toolbar-title{
+  font-family:var(--display);
+  font-weight:700;
+  font-size:.85rem;
+  margin-right:8px;
+}
+
+.editor-toolbar button{
+  appearance:none;
+  border:1px solid var(--border);
+  background:#fff;
+  color:var(--ink-dim);
+
+  border-radius:7px;
+  padding:6px 10px;
+
+  font-family:var(--sans);
+  font-size:.78rem;
+  font-weight:600;
+
+  cursor:pointer;
+  transition:.15s;
+}
+
+.editor-toolbar button:hover{
+  background:var(--accent-soft);
+  color:var(--accent);
+  border-color:var(--accent-soft-2);
+}
+
+.editor-toolbar .save-btn{
+  background:var(--accent);
+  color:#fff;
+  border-color:var(--accent);
+}
+
+.editor-toolbar .save-btn:hover{
+  background:#4338ca;
+  color:#fff;
+}
+
+.toolbar-separator{
+  width:1px;
+  height:24px;
+  background:var(--border);
+  margin:0 4px;
+}
+
+.toolbar-spacer{
+  flex:1;
+}
+
+
+/* =========================================================
+   LAYOUT
+   ========================================================= */
+
+.shell{
+  display:flex;
+  max-width:1400px;
+  margin:0 auto;
+}
+
+.sidebar{
+  width:var(--sidebar-w);
+  flex-shrink:0;
+  position:sticky;
+  top:49px;
+  height:calc(100vh - 49px);
+  overflow-y:auto;
+  padding:28px 18px;
+  border-right:1px solid var(--border-soft);
+}
+
+.sidebar-brand{
+  font-family:var(--display);
+  font-weight:700;
+  font-size:1rem;
+  margin-bottom:4px;
+}
+
+.sidebar-sub{
+  font-size:.74rem;
+  color:var(--ink-faint);
+  margin-bottom:22px;
+}
+
+.side-group{
+  margin-bottom:6px;
+}
+
+.side-group-title{
+  font-family:var(--mono);
+  font-size:.68rem;
+  text-transform:uppercase;
+  letter-spacing:.09em;
+  color:var(--ink-faint);
+  padding:14px 10px 6px;
+}
+
+.side-link{
+  display:block;
+  font-size:.85rem;
+  padding:7px 10px;
+  border-radius:8px;
+  color:var(--ink-dim);
+  border-left:2px solid transparent;
+  transition:.15s;
+}
+
+.side-link:hover{
+  background:var(--bg-soft);
+  color:var(--ink);
+}
+
+.side-link.active{
+  background:var(--accent-soft);
+  color:var(--accent);
+  border-left-color:var(--accent);
+  font-weight:600;
+}
+
+.main{
+  flex:1;
+  min-width:0;
+  padding:0 0 100px;
+}
+
+.mobile-nav{
+  display:none;
+}
+
+@media(max-width:980px){
+
+  .sidebar{
+    display:none;
+  }
+
+  .mobile-nav{
+    display:flex;
+    gap:6px;
+    overflow-x:auto;
+    position:sticky;
+    top:0;
+    z-index:40;
+    background:rgba(255,255,255,.92);
+    backdrop-filter:blur(8px);
+    border-bottom:1px solid var(--border-soft);
+    padding:12px 16px;
+  }
+
+  .mobile-nav a{
+    flex-shrink:0;
+    font-size:.78rem;
+    padding:6px 12px;
+    border-radius:999px;
+    border:1px solid var(--border);
+    color:var(--ink-dim);
+    white-space:nowrap;
+  }
+}
+
+.wrap{
+  max-width:880px;
+  margin:0 auto;
+  padding:0 40px;
+}
+
+@media(max-width:640px){
+  .wrap{
+    padding:0 20px;
+  }
+}
+
+
+/* =========================================================
+   EDITABLE AREA
+   ========================================================= */
+
+.editable-area{
+  outline:none;
+}
+
+.editable-area p,
+.editable-area h1,
+.editable-area h2,
+.editable-area h3,
+.editable-area h4,
+.editable-area h5,
+.editable-area h6,
+.editable-area li{
+  transition:outline .1s,background .1s;
+}
+
+.editable-area p:hover,
+.editable-area h1:hover,
+.editable-area h2:hover,
+.editable-area h3:hover,
+.editable-area h4:hover,
+.editable-area h5:hover,
+.editable-area h6:hover{
+  outline:1px dashed var(--border);
+  outline-offset:3px;
+}
+
+.editing-highlight{
+  outline:2px solid var(--accent);
+  outline-offset:3px;
+}
+
+
+/* =========================================================
+   HERO
+   ========================================================= */
+
+.hero{
+  padding:64px 0 40px;
+}
+
+.hero-kicker{
+  font-family:var(--mono);
+  font-size:.78rem;
+  color:var(--accent);
+  letter-spacing:.1em;
+  text-transform:uppercase;
+  margin-bottom:16px;
+  display:flex;
+  align-items:center;
+  gap:8px;
+}
+
+.hero-kicker::before{
+  content:"";
+  width:18px;
+  height:2px;
+  background:var(--accent);
+  display:inline-block;
+}
+
+h1.hero-title{
+  font-family:var(--display);
+  font-weight:700;
+  font-size:clamp(1.9rem,4vw,2.7rem);
+  line-height:1.15;
+  margin:0 0 18px;
+  letter-spacing:-.01em;
+}
+
+.hero-desc{
+  color:var(--ink-dim);
+  font-size:1.02rem;
+  max-width:640px;
+  margin-bottom:26px;
+}
+
+.source-card{
+  display:flex;
+  gap:14px;
+  align-items:center;
+  padding:14px 18px;
+  border:1px solid var(--border);
+  border-radius:12px;
+  background:var(--bg-soft);
+  font-size:.85rem;
+  max-width:640px;
+}
+
+.source-card .yt-badge{
+  flex-shrink:0;
+  width:38px;
+  height:38px;
+  border-radius:9px;
+  background:#ff0000;
+  color:#fff;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  font-size:1.1rem;
+}
+
+.source-card b{
+  color:var(--ink);
+}
+
+.source-card .src-meta{
+  color:var(--ink-faint);
+  font-size:.78rem;
+  margin-top:2px;
+}
+
+.map-pills{
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px;
+  margin-top:26px;
+}
+
+.map-pill{
+  font-family:var(--mono);
+  font-size:.74rem;
+  padding:6px 12px;
+  border-radius:999px;
+  border:1px solid var(--border);
+  color:var(--ink-dim);
+  background:#fff;
+}
+
+.map-pill.covered{
+  border-color:var(--accent-soft-2);
+  color:var(--accent);
+  background:var(--accent-soft);
+}
+
+hr.divider{
+  border:none;
+  height:1px;
+  background:var(--border-soft);
+  margin:0;
+}
+
+
+/* =========================================================
+   SECTIONS
+   ========================================================= */
+
+section{
+  padding:56px 0 8px;
+}
+
+.sec-eyebrow{
+  font-family:var(--mono);
+  font-size:.72rem;
+  color:var(--ink-faint);
+  text-transform:uppercase;
+  letter-spacing:.1em;
+  margin-bottom:10px;
+}
+
+h2.sec-title{
+  font-family:var(--display);
+  font-weight:700;
+  font-size:clamp(1.4rem,2.6vw,1.85rem);
+  margin:0 0 14px;
+  letter-spacing:-.01em;
+  scroll-margin-top:80px;
+}
+
+h3.sub-title{
+  font-family:var(--display);
+  font-weight:600;
+  font-size:1.12rem;
+  margin:34px 0 12px;
+  scroll-margin-top:80px;
+}
+
+p{
+  color:var(--ink-dim);
+  margin:0 0 14px;
+}
+
+p b,
+li b{
+  color:var(--ink);
+  font-weight:600;
+}
+
+ul,
+ol{
+  color:var(--ink-dim);
+  padding-left:22px;
+  margin:0 0 16px;
+}
+
+li{
+  margin-bottom:6px;
+}
+
+
+/* =========================================================
+   CALLOUT
+   ========================================================= */
+
+.callout{
+  border:1px solid var(--border);
+  border-left:3px solid var(--accent);
+  border-radius:10px;
+  background:var(--accent-soft);
+  padding:14px 18px;
+  font-size:.9rem;
+  color:var(--ink-dim);
+  margin:18px 0;
+}
+
+.callout b{
+  color:var(--ink);
+}
+
+.callout.warn{
+  border-left-color:var(--warn);
+  background:var(--warn-soft);
+}
+
+.callout.ok{
+  border-left-color:var(--ok);
+  background:var(--ok-soft);
+}
+
+
+/* =========================================================
+   DIAGRAMS
+   ========================================================= */
+
+.diagram{
+  border:1px solid var(--border);
+  border-radius:14px;
+  background:var(--bg-soft);
+  padding:22px;
+  margin:20px 0;
+  overflow-x:auto;
+}
+
+.diagram-title{
+  font-family:var(--mono);
+  font-size:.7rem;
+  text-transform:uppercase;
+  letter-spacing:.08em;
+  color:var(--ink-faint);
+  margin-bottom:14px;
+}
+
+.flow{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  flex-wrap:wrap;
+}
+
+.node{
+  border:1.5px solid var(--border);
+  background:#fff;
+  border-radius:10px;
+  padding:10px 16px;
+  font-size:.82rem;
+  font-weight:600;
+  text-align:center;
+  min-width:90px;
+}
+
+.node.accent{
+  border-color:var(--accent-soft-2);
+  background:var(--accent-soft);
+  color:var(--accent);
+}
+
+.node.teal{
+  border-color:rgba(14,165,164,.3);
+  background:var(--accent-2-soft);
+  color:var(--accent-2);
+}
+
+.node.dim{
+  color:var(--ink-dim);
+  font-weight:500;
+}
+
+.arrow{
+  color:var(--ink-faint);
+  font-size:1.1rem;
+  flex-shrink:0;
+}
+
+.flow-vert{
+  display:flex;
+  flex-direction:column;
+  align-items:flex-start;
+  gap:6px;
+}
+
+
+/* =========================================================
+   GRIDS
+   ========================================================= */
+
+.grid2{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:16px;
+  margin:18px 0;
+}
+
+@media(max-width:640px){
+  .grid2{
+    grid-template-columns:1fr;
+  }
+}
+
+.grid3{
+  display:grid;
+  grid-template-columns:repeat(3,1fr);
+  gap:14px;
+  margin:18px 0;
+}
+
+@media(max-width:760px){
+  .grid3{
+    grid-template-columns:1fr;
+  }
+}
+
+.card{
+  border:1px solid var(--border);
+  border-radius:12px;
+  padding:18px 20px;
+  background:#fff;
+}
+
+.card h4{
+  margin:0 0 8px;
+  font-size:.95rem;
+  font-family:var(--sans);
+  font-weight:700;
+}
+
+.card p{
+  margin:0;
+  font-size:.86rem;
+}
+
+.card.tag-accent{
+  border-top:3px solid var(--accent);
+}
+
+.card.tag-teal{
+  border-top:3px solid var(--accent-2);
+}
+
+
+/* =========================================================
+   TABLES
+   ========================================================= */
+
+table{
+  width:100%;
+  border-collapse:collapse;
+  margin:18px 0;
+  font-size:.85rem;
+  border:1px solid var(--border);
+  border-radius:10px;
+  overflow:hidden;
+}
+
+thead th{
+  text-align:left;
+  padding:10px 14px;
+  background:var(--bg-soft);
+  font-family:var(--mono);
+  font-size:.68rem;
+  text-transform:uppercase;
+  letter-spacing:.07em;
+  color:var(--ink-faint);
+  border-bottom:1px solid var(--border);
+}
+
+td{
+  padding:10px 14px;
+  border-bottom:1px solid var(--border-soft);
+  color:var(--ink-dim);
+  vertical-align:top;
+}
+
+tbody tr:last-child td{
+  border-bottom:none;
+}
+
+tbody tr:hover{
+  background:var(--bg-soft);
+}
+
+td code{
+  white-space:nowrap;
+}
+
+.badge{
+  display:inline-block;
+  font-family:var(--mono);
+  font-size:.72rem;
+  font-weight:600;
+  padding:2px 8px;
+  border-radius:6px;
+}
+
+.badge.g2{
+  background:var(--ok-soft);
+  color:var(--ok);
+}
+
+.badge.g3{
+  background:#eef2ff;
+  color:#4338ca;
+}
+
+.badge.g4{
+  background:var(--warn-soft);
+  color:var(--warn);
+}
+
+.badge.g5{
+  background:var(--bad-soft);
+  color:var(--bad);
+}
+
+
+/* =========================================================
+   STEPS
+   ========================================================= */
+
+.steps{
+  counter-reset:step;
+  margin:20px 0;
+}
+
+.step{
+  position:relative;
+  padding:0 0 22px 42px;
+  border-left:2px solid var(--border-soft);
+  margin-left:15px;
+}
+
+.step:last-child{
+  border-left-color:transparent;
+  padding-bottom:0;
+}
+
+.step::before{
+  counter-increment:step;
+  content:counter(step);
+  position:absolute;
+  left:-15px;
+  top:-2px;
+  width:30px;
+  height:30px;
+  border-radius:50%;
+  background:var(--accent);
+  color:#fff;
+  font-family:var(--mono);
+  font-size:.8rem;
+  font-weight:600;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+}
+
+.step h4{
+  margin:0 0 4px;
+  font-size:.95rem;
+  font-weight:700;
+}
+
+.step p{
+  margin:0;
+  font-size:.87rem;
+}
+
+
+/* =========================================================
+   CODE
+   ========================================================= */
+
+pre.code{
+  margin:14px 0;
+  padding:16px 18px;
+  border-radius:10px;
+  background:#12141c;
+  color:#e6e8f0;
+  font-family:var(--mono);
+  font-size:.8rem;
+  line-height:1.6;
+  overflow-x:auto;
+  border:1px solid #1e2130;
+}
+
+pre.code .k{
+  color:#c792ea;
+}
+
+pre.code .s{
+  color:#a8cc8c;
+}
+
+pre.code .c{
+  color:#6b7280;
+  font-style:italic;
+}
+
+pre.code .n{
+  color:#f78c6c;
+}
+
+
+/* =========================================================
+   ALGORITHM GRID
+   ========================================================= */
+
+.algo-grid{
+  display:grid;
+  grid-template-columns:repeat(2,1fr);
+  gap:14px;
+  margin:18px 0;
+}
+
+@media(max-width:640px){
+  .algo-grid{
+    grid-template-columns:1fr;
+  }
+}
+
+.algo-card{
+  border:1px solid var(--border);
+  border-radius:12px;
+  padding:16px 18px;
+}
+
+.algo-num{
+  font-family:var(--mono);
+  font-size:.7rem;
+  color:var(--accent);
+  font-weight:700;
+}
+
+.algo-card h4{
+  margin:6px 0 6px;
+  font-size:.9rem;
+}
+
+.algo-card p{
+  margin:0;
+  font-size:.83rem;
+}
+
+
+/* =========================================================
+   FOOTER
+   ========================================================= */
+
+footer{
+  padding:60px 0 90px;
+  border-top:1px solid var(--border-soft);
+  margin-top:30px;
+}
+
+footer p{
+  font-size:.83rem;
+  color:var(--ink-faint);
+}
+
+
+/* =========================================================
+   MOBILE EDITOR
+   ========================================================= */
+
+@media(max-width:700px){
+
+  .editor-toolbar{
+    gap:4px;
+    padding:8px;
+  }
+
+  .toolbar-title{
+    width:100%;
+  }
+
+  .toolbar-spacer{
+    display:none;
+  }
+
+  .toolbar-separator{
+    display:none;
+  }
+
+  .editor-toolbar button{
+    padding:6px 8px;
+    font-size:.7rem;
+  }
+}
+</style>
+</head>
+
+<body>
+
+
+<!-- =========================================================
+     EDITOR TOOLBAR
+     ========================================================= -->
+
+<div class="editor-toolbar" id="editorToolbar">
+
+  <div class="toolbar-title">
+    ✏️ Notes Editor
+  </div>
+
+  <button type="button" data-action="add-heading">
+    H2 Heading
+  </button>
+
+  <button type="button" data-action="remove-heading">
+    Remove Heading
+  </button>
+
+  <span class="toolbar-separator"></span>
+
+  <button type="button" data-action="heading-up">
+    H ↑
+  </button>
+
+  <button type="button" data-action="heading-down">
+    H ↓
+  </button>
+
+  <span class="toolbar-separator"></span>
+
+  <button type="button" data-action="add-line">
+    + Line
+  </button>
+
+  <button type="button" data-action="remove-line">
+    − Line
+  </button>
+
+  <span class="toolbar-separator"></span>
+
+  <button type="button" data-action="bold">
+    <b>B</b>
+  </button>
+
+  <button type="button" data-action="italic">
+    <i>I</i>
+  </button>
+
+  <button type="button" data-action="code">
+    &lt;/&gt;
+  </button>
+
+  <span class="toolbar-spacer"></span>
+
+  <button type="button" class="save-btn" data-action="save">
+    💾 Save
+  </button>
+
+  <button type="button" data-action="reset">
+    ↩ Reset
+  </button>
+
+  <button type="button" data-action="download">
+    ⬇ Download HTML
+  </button>
+
+</div>
+
+
+<!-- =========================================================
+     MOBILE NAV
+     ========================================================= -->
+
+<nav class="mobile-nav">
+  <a href="#foundations">Foundations</a>
+  <a href="#databases">Databases</a>
+  <a href="#scaling">Scaling</a>
+  <a href="#load-balancing">Load Balancing</a>
+  <a href="#spof">SPOF</a>
+  <a href="#api-design">API Design</a>
+  <a href="#protocols">Protocols</a>
+  <a href="#rest">REST</a>
+  <a href="#graphql">GraphQL</a>
+  <a href="#auth">Authentication</a>
+  <a href="#authz">Authorization</a>
+  <a href="#security">Security</a>
+</nav>
+
+
+<div class="shell">
+
+
+  <!-- =======================================================
+       SIDEBAR
+       ======================================================= -->
+
+  <aside class="sidebar">
+
+    <div class="sidebar-brand">
+      📐 System Design Notes
+    </div>
+
+    <div class="sidebar-sub">
+      Editable personal study notes
+    </div>
+
+
+    <div class="side-group">
+
+      <div class="side-group-title">
+        Foundations
+      </div>
+
+      <a class="side-link" href="#foundations">
+        Single Server & Request Flow
+      </a>
+
+      <a class="side-link" href="#databases">
+        SQL vs NoSQL
+      </a>
+
+      <a class="side-link" href="#scaling">
+        Vertical vs Horizontal Scaling
+      </a>
+
+      <a class="side-link" href="#load-balancing">
+        Load Balancing
+      </a>
+
+      <a class="side-link" href="#spof">
+        Single Point of Failure
+      </a>
+
+    </div>
+
+
+    <div class="side-group">
+
+      <div class="side-group-title">
+        API Design
+      </div>
+
+      <a class="side-link" href="#api-design">
+        What Is an API?
+      </a>
+
+      <a class="side-link" href="#api-principles">
+        Design Principles
+      </a>
+
+      <a class="side-link" href="#api-process">
+        Design Process
+      </a>
+
+    </div>
+
+
+    <div class="side-group">
+
+      <div class="side-group-title">
+        Protocols
+      </div>
+
+      <a class="side-link" href="#protocols">
+        HTTP, WebSocket, AMQP, gRPC
+      </a>
+
+      <a class="side-link" href="#transport">
+        TCP vs UDP
+      </a>
+
+    </div>
+
+
+    <div class="side-group">
+
+      <div class="side-group-title">
+        Deep Dives
+      </div>
+
+      <a class="side-link" href="#rest">
+        RESTful API Design
+      </a>
+
+      <a class="side-link" href="#graphql">
+        GraphQL API Design
+      </a>
+
+    </div>
+
+
+    <div class="side-group">
+
+      <div class="side-group-title">
+        Identity & Security
+      </div>
+
+      <a class="side-link" href="#auth">
+        Authentication
+      </a>
+
+      <a class="side-link" href="#authz">
+        Authorization
+      </a>
+
+      <a class="side-link" href="#security">
+        API Security
+      </a>
+
+    </div>
+
+  </aside>
+
+
+  <!-- =======================================================
+       MAIN
+       ======================================================= -->
+
+  <main class="main">
+
+    <!--
+      EVERYTHING INSIDE THIS DIV IS EDITABLE.
+
+      You can click any text and type.
+    -->
+
+    <div
+      class="wrap editable-area"
+      id="editableArea"
+      contenteditable="true"
+    >
+
+
+      <!-- ===================================================
+           HERO
+           =================================================== -->
+
+      <header class="hero">
+
+        <div class="hero-kicker">
+          System Design Course Notes
+        </div>
+
+        <h1 class="hero-title">
+          From single server to secure, scalable APIs
+        </h1>
+
+        <p class="hero-desc">
+          A structured, visual write-up of the course — covering
+          system foundations, database selection, scaling,
+          load balancing, API design (REST / GraphQL / gRPC),
+          network protocols, and the authentication,
+          authorization, and security layers every production
+          system needs.
+        </p>
+
+
+        <div class="source-card">
+
+          <div class="yt-badge">
+            ▶
+          </div>
+
+          <div>
+
+            <div>
+              <b>
+                System Design Course – APIs, Databases,
+                Caching, CDNs, Load Balancing & Production Infra
+              </b>
+            </div>
+
+            <div class="src-meta">
+              freeCodeCamp.org · youtube.com/watch?v=C842vFY5kRo
+            </div>
+
+          </div>
+
+        </div>
+
+
+        <div class="map-pills">
+
+          <span class="map-pill covered">Foundations</span>
+          <span class="map-pill covered">API Design</span>
+          <span class="map-pill covered">Protocols</span>
+          <span class="map-pill covered">RESTful APIs</span>
+          <span class="map-pill covered">GraphQL</span>
+          <span class="map-pill covered">Authentication</span>
+          <span class="map-pill covered">Authorization</span>
+          <span class="map-pill covered">API Security</span>
+
+          <span class="map-pill">
+            Caching / CDNs *
+          </span>
+
+          <span class="map-pill">
+            Big Data Processing *
+          </span>
+
+          <span class="map-pill">
+            Production Design *
+          </span>
+
+          <span class="map-pill">
+            Interview Approach *
+          </span>
+
+        </div>
+
+
+        <p style="font-size:.78rem;color:var(--ink-faint);margin-top:10px;">
+          * The course outline mentions these later modules,
+          but they fall past the portion of the transcript
+          available for this note.
+        </p>
+
+      </header>
+
+
+      <hr class="divider">
+
+
+      <!-- ===================================================
+           FOUNDATIONS
+           =================================================== -->
+
+      <section id="foundations">
+
+        <div class="sec-eyebrow">
+          01 — Foundations
+        </div>
+
+        <h2 class="sec-title">
+          Start small: the single-server setup
+        </h2>
+
+        <p>
+          Every complex system starts simple. The course builds
+          up from a single server handling one user, then scales
+          it piece by piece — because understanding each component
+          in isolation makes the full picture easier to reason
+          about later.
+        </p>
+
+
+        <div class="diagram">
+
+          <div class="diagram-title">
+            How a request reaches your server
+          </div>
+
+          <div class="steps">
+
+            <div class="step">
+
+              <h4>User types a domain</h4>
+
+              <p>
+                The browser or mobile app only knows a
+                human-readable domain, e.g.
+                <code>app.demo.com</code> — not an IP address.
+              </p>
+
+            </div>
+
+
+            <div class="step">
+
+              <h4>DNS resolves the domain</h4>
+
+              <p>
+                The Domain Name System maps
+                <code>app.demo.com</code> to the server's IP
+                address and returns it to the client.
+              </p>
+
+            </div>
+
+
+            <div class="step">
+
+              <h4>Client sends an HTTP request</h4>
+
+              <p>
+                With the IP in hand, the client sends an HTTP
+                request to the server asking for specific data.
+              </p>
+
+            </div>
+
+
+            <div class="step">
+
+              <h4>Server responds</h4>
+
+              <p>
+                The server processes the request and replies
+                with HTML for browsers or JSON for APIs.
+              </p>
+
+            </div>
+
+          </div>
+
+
+          <div class="flow" style="margin-top:8px;">
+
+            <div class="node dim">
+              Browser / Mobile App
+            </div>
+
+            <span class="arrow">→</span>
+
+            <div class="node teal">
+              DNS
+            </div>
+
+            <span class="arrow">→</span>
+
+            <div class="node accent">
+              Single Server
+              <br>
+              <span style="font-weight:400;font-size:.72em;">
+                app + DB + cache
+              </span>
+            </div>
+
+          </div>
+
+        </div>
+
+
+        <pre class="code"><span class="c">// Example request</span>
+GET /product/123
+
+<span class="c">// Example JSON response</span>
+{
+  <span class="s">"id"</span>: 123,
+  <span class="s">"name"</span>: <span class="s">"Wireless Mouse"</span>,
+  <span class="s">"description"</span>: <span class="s">"..."</span>,
+  <span class="s">"price"</span>: 24.99
+}</pre>
+
+
+        <div class="callout">
+          <b>Key takeaway:</b>
+          a single-server setup is ideal for a small user base,
+          but it becomes a bottleneck fast. The rest of the
+          course is essentially "what do we split out of this
+          one box, and why."
+        </div>
+
+      </section>
+
+
+      <hr class="divider">
+
+
+      <!-- ===================================================
+           DATABASES
+           =================================================== -->
+
+      <section id="databases">
+
+        <div class="sec-eyebrow">
+          01 — Foundations
+        </div>
+
+        <h2 class="sec-title">
+          Choosing a database: SQL vs NoSQL
+        </h2>
+
+        <p>
+          As the user base grows, the web tier handling traffic
+          is split from the data tier managing storage so each
+          can scale independently. That immediately raises the
+          question: which kind of database?
+        </p>
+
+
+        <div class="grid2">
+
+          <div class="card tag-accent">
+
+            <h4>
+              🗄️ Relational (SQL / RDBMS)
+            </h4>
+
+            <p>
+              Data lives in <b>tables of rows and columns</b>,
+              like a spreadsheet. Examples: PostgreSQL, MySQL,
+              Oracle, SQLite.
+            </p>
+
+          </div>
+
+
+          <div class="card tag-teal">
+
+            <h4>
+              📦 Non-relational (NoSQL)
+            </h4>
+
+            <p>
+              Optimized for flexible, fast access to large
+              volumes of unstructured data. Examples: MongoDB,
+              Cassandra, Redis, Neo4j.
+            </p>
+
+          </div>
+
+        </div>
+
+
+        <h3 class="sub-title">
+          Why SQL: joins & ACID transactions
+        </h3>
+
+        <p>
+          SQL databases support <b>join operations</b> —
+          combining rows from multiple tables. They also
+          guarantee strong consistency through <b>ACID</b>
+          transactions.
+        </p>
+
+
+        <table>
+
+          <thead>
+            <tr>
+              <th>Letter</th>
+              <th>Property</th>
+              <th>Meaning</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+            <tr>
+              <td><b>A</b></td>
+              <td>Atomic</td>
+              <td>
+                The whole transaction succeeds completely,
+                or fails completely.
+              </td>
+            </tr>
+
+            <tr>
+              <td><b>C</b></td>
+              <td>Consistent</td>
+              <td>
+                Every transaction moves the database from
+                one valid state to another.
+              </td>
+            </tr>
+
+            <tr>
+              <td><b>I</b></td>
+              <td>Isolated</td>
+              <td>
+                Concurrent transactions don't interfere
+                with each other.
+              </td>
+            </tr>
+
+            <tr>
+              <td><b>D</b></td>
+              <td>Durable</td>
+              <td>
+                Once committed, data survives a server crash.
+              </td>
+            </tr>
+
+          </tbody>
+
+        </table>
+
+
+        <h3 class="sub-title">
+          The four NoSQL families
+        </h3>
+
+
+        <div class="algo-grid">
+
+          <div class="algo-card">
+
+            <h4>📄 Document stores</h4>
+
+            <p>
+              <b>MongoDB</b> — JSON-like documents holding
+              complex nested data in a single record.
+            </p>
+
+          </div>
+
+
+          <div class="algo-card">
+
+            <h4>📊 Wide-column stores</h4>
+
+            <p>
+              <b>Cassandra, Cosmos DB</b> — excellent for
+              massive scale and heavy write throughput.
+            </p>
+
+          </div>
+
+
+          <div class="algo-card">
+
+            <h4>🔗 Graph stores</h4>
+
+            <p>
+              <b>Neo4j</b> — stores entities and relationships
+              as graphs; great for recommendations.
+            </p>
+
+          </div>
+
+
+          <div class="algo-card">
+
+            <h4>⚡ Key-value stores</h4>
+
+            <p>
+              <b>Redis, Memcached</b> — simple and fast,
+              ideal for caching and sessions.
+            </p>
+
+          </div>
+
+        </div>
+
+
+        <h3 class="sub-title">
+          Decision guide
+        </h3>
+
+
+        <table>
+
+          <thead>
+            <tr>
+              <th>If your application needs…</th>
+              <th>Choose</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+            <tr>
+              <td>
+                Well-structured data with clear relationships
+              </td>
+
+              <td>
+                <span class="badge g2">SQL</span>
+              </td>
+            </tr>
+
+            <tr>
+              <td>
+                Strong consistency & transactional integrity
+              </td>
+
+              <td>
+                <span class="badge g2">SQL</span>
+              </td>
+            </tr>
+
+            <tr>
+              <td>
+                Super low-latency responses
+              </td>
+
+              <td>
+                <span class="badge g3">NoSQL</span>
+              </td>
+            </tr>
+
+            <tr>
+              <td>
+                Unstructured / semi-structured data
+              </td>
+
+              <td>
+                <span class="badge g3">NoSQL</span>
+              </td>
+            </tr>
+
+            <tr>
+              <td>
+                Flexible, massively scalable storage
+              </td>
+
+              <td>
+                <span class="badge g3">NoSQL</span>
+              </td>
+            </tr>
+
+          </tbody>
+
+        </table>
+
+      </section>
+
+
+      <hr class="divider">
+
+
+      <!-- ===================================================
+           SCALING
+           =================================================== -->
+
+      <section id="scaling">
+
+        <div class="sec-eyebrow">
+          01 — Foundations
+        </div>
+
+        <h2 class="sec-title">
+          Vertical vs horizontal scaling
+        </h2>
+
+
+        <div class="grid2">
+
+          <div class="card">
+
+            <h4>
+              ⬆️ Vertical scaling — "scale up"
+            </h4>
+
+            <p>
+              Add more RAM/CPU to the <b>same</b> server.
+              Simple and useful for low/moderate traffic,
+              but eventually reaches a hard resource ceiling
+              and provides zero redundancy.
+            </p>
+
+          </div>
+
+
+          <div class="card">
+
+            <h4>
+              ➡️ Horizontal scaling — "scale out"
+            </h4>
+
+            <p>
+              Add <b>more servers</b> to share the load.
+              This improves fault tolerance and allows much
+              greater scaling.
+            </p>
+
+          </div>
+
+        </div>
+
+
+        <div class="diagram">
+
+          <div class="diagram-title">
+            Vertical vs horizontal
+          </div>
+
+          <div style="display:flex;gap:40px;flex-wrap:wrap;">
+
+            <div>
+
+              <div style="font-size:.78rem;color:var(--ink-faint);margin-bottom:8px;">
+                Vertical
+              </div>
+
+              <div class="node accent" style="padding:22px 30px;">
+                Server
+                <br>
+                <span style="font-weight:400;font-size:.72em;">
+                  +RAM +CPU
+                </span>
+              </div>
+
+            </div>
+
+
+            <div>
+
+              <div style="font-size:.78rem;color:var(--ink-faint);margin-bottom:8px;">
+                Horizontal
+              </div>
+
+              <div class="flow">
+
+                <div class="node teal">
+                  Server 1
+                </div>
+
+                <div class="node teal">
+                  Server 2
+                </div>
+
+                <div class="node teal">
+                  Server 3
+                </div>
+
+              </div>
+
+            </div>
+
+          </div>
+
+        </div>
+
+
+        <p>
+          That routing problem — "which server should this
+          request go to?" — is solved by a <b>load balancer</b>.
+        </p>
+
+      </section>
+
+
+      <hr class="divider">
+
+
+      <!-- ===================================================
+           LOAD BALANCING
+           =================================================== -->
+
+      <section id="load-balancing">
+
+        <div class="sec-eyebrow">
+          01 — Foundations
+        </div>
+
+        <h2 class="sec-title">
+          Load balancing
+        </h2>
+
+        <p>
+          A load balancer sits in front of your server pool
+          and distributes incoming traffic so no single server
+          is overwhelmed, while rerouting traffic away from
+          servers that are down.
+        </p>
+
+
+        <div class="diagram">
+
+          <div class="diagram-title">
+            Load balancer in the request path
+          </div>
+
+          <div class="flow">
+
+            <div class="node dim">
+              Clients
+            </div>
+
+            <span class="arrow">→</span>
+
+            <div class="node accent">
+              Load Balancer
+            </div>
+
+            <span class="arrow">→</span>
+
+            <div class="flow-vert">
+
+              <div class="node teal" style="min-width:110px;">
+                Server 1
+              </div>
+
+              <div class="node teal" style="min-width:110px;">
+                Server 2
+              </div>
+
+              <div class="node teal" style="min-width:110px;">
+                Server 3
+              </div>
+
+            </div>
+
+          </div>
+
+        </div>
+
+
+        <h3 class="sub-title">
+          Seven load-balancing strategies
+        </h3>
+
+
+        <div class="algo-grid">
+
+          <div class="algo-card">
+            <div class="algo-num">01</div>
+            <h4>Round Robin</h4>
+            <p>
+              Requests rotate sequentially between servers.
+            </p>
+          </div>
+
+          <div class="algo-card">
+            <div class="algo-num">02</div>
+            <h4>Least Connections</h4>
+            <p>
+              Sends the request to the server with the fewest
+              active connections.
+            </p>
+          </div>
+
+          <div class="algo-card">
+            <div class="algo-num">03</div>
+            <h4>Least Response Time</h4>
+            <p>
+              Picks the fastest available server.
+            </p>
+          </div>
+
+          <div class="algo-card">
+            <div class="algo-num">04</div>
+            <h4>IP Hash</h4>
+            <p>
+              Consistently routes the same client to the same
+              server based on IP hashing.
+            </p>
+          </div>
+
+          <div class="algo-card">
+            <div class="algo-num">05</div>
+            <h4>Weighted</h4>
+            <p>
+              More powerful servers receive proportionally
+              more traffic.
+            </p>
+          </div>
+
+          <div class="algo-card">
+            <div class="algo-num">06</div>
+            <h4>Geographic</h4>
+            <p>
+              Routes users to servers closest to their location.
+            </p>
+          </div>
+
+          <div class="algo-card">
+            <div class="algo-num">07</div>
+            <h4>Consistent Hashing</h4>
+            <p>
+              Maps clients onto a hash ring and minimizes
+              redistribution when servers change.
+            </p>
+          </div>
+
+        </div>
+
+
+        <h3 class="sub-title">
+          Health checks
+        </h3>
+
+        <p>
+          Load balancers continuously ping backend servers.
+          If a server stops responding, it is marked offline
+          until it passes a health check again.
+        </p>
+
+
+        <h3 class="sub-title">
+          Real-world examples
+        </h3>
+
+
+        <table>
+
+          <thead>
+            <tr>
+              <th>Type</th>
+              <th>Examples</th>
+              <th>Note</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+            <tr>
+              <td>Software</td>
+              <td>NGINX, HAProxy</td>
+              <td>
+                Installed and configured on your own server.
+              </td>
+            </tr>
+
+            <tr>
+              <td>Hardware</td>
+              <td>F5, Citrix</td>
+              <td>
+                Dedicated physical appliances.
+              </td>
+            </tr>
+
+            <tr>
+              <td>Cloud-managed</td>
+              <td>AWS ELB, Azure LB, Google Cloud LB</td>
+              <td>
+                Automatic scaling and health monitoring.
+              </td>
+            </tr>
+
+          </tbody>
+
+        </table>
+
+      </section>
+
+
+      <hr class="divider">
+
+
+      <!-- ===================================================
+           SPOF
+           =================================================== -->
+
+      <section id="spof">
+
+        <div class="sec-eyebrow">
+          01 — Foundations
+        </div>
+
+        <h2 class="sec-title">
+          Single point of failure (SPOF)
+        </h2>
+
+        <p>
+          A SPOF is any one component whose failure takes the
+          entire system down with it. A single shared database
+          or single load balancer are classic examples.
+        </p>
+
+
+        <div class="grid3">
+
+          <div class="card">
+            <h4>📉 Reliability</h4>
+            <p>
+              One failure can cause full outages.
+            </p>
+          </div>
+
+          <div class="card">
+            <h4>📈 Scalability</h4>
+            <p>
+              Added components can become new SPOFs.
+            </p>
+          </div>
+
+          <div class="card">
+            <h4>🔓 Security</h4>
+            <p>
+              Attackers can target single choke points.
+            </p>
+          </div>
+
+        </div>
+
+
+        <h3 class="sub-title">
+          Removing the load balancer as a SPOF
+        </h3>
+
+
+        <div class="grid2">
+
+          <div class="card">
+            <h4>1 · Redundancy</h4>
+            <p>
+              Run more than one load balancer.
+            </p>
+          </div>
+
+          <div class="card">
+            <h4>2 · Health checks</h4>
+            <p>
+              Monitor load balancers themselves.
+            </p>
+          </div>
+
+          <div class="card">
+            <h4>3 · Self-healing</h4>
+            <p>
+              Automatically replace failed instances.
+            </p>
+          </div>
+
+          <div class="card">
+            <h4>Database SPOFs</h4>
+            <p>
+              Use replication and failover strategies.
+            </p>
+          </div>
+
+        </div>
+
+      </section>
+
+
+      <hr class="divider">
+
+
+      <!-- ===================================================
+           API DESIGN
+           =================================================== -->
+
+      <section id="api-design">
+
+        <div class="sec-eyebrow">
+          02 — API Design
+        </div>
+
+        <h2 class="sec-title">
+          What is an API, and which style should you use?
+        </h2>
+
+        <p>
+          An API is a <b>contract</b> between client and server:
+          what requests can be made and what responses to expect.
+          It hides implementation details behind a clean boundary.
+        </p>
+
+
+        <table>
+
+          <thead>
+            <tr>
+              <th>Style</th>
+              <th>Model</th>
+              <th>Best for</th>
+              <th>Trade-off</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+            <tr>
+              <td><b>REST</b></td>
+              <td>
+                Resource-based and stateless.
+              </td>
+              <td>
+                Web and mobile applications.
+              </td>
+              <td>
+                Related data may require multiple requests.
+              </td>
+            </tr>
+
+            <tr>
+              <td><b>GraphQL</b></td>
+              <td>
+                Single endpoint with client-defined responses.
+              </td>
+              <td>
+                Complex UIs.
+              </td>
+              <td>
+                Harder caching and query complexity.
+              </td>
+            </tr>
+
+            <tr>
+              <td><b>gRPC</b></td>
+              <td>
+                RPC over HTTP/2 and protocol buffers.
+              </td>
+              <td>
+                Internal microservices.
+              </td>
+              <td>
+                Limited browser support.
+              </td>
+            </tr>
+
+          </tbody>
+
+        </table>
+
+
+        <div class="diagram">
+
+          <div class="diagram-title">
+            One data need, three approaches
+          </div>
+
+          <p>
+            Getting a user + posts + followers:
+          </p>
+
+          <div class="flow-vert">
+
+            <div class="flow">
+
+              <div class="node dim">
+                REST
+              </div>
+
+              <span class="arrow">→</span>
+
+              <div class="node">
+                GET /users/123
+              </div>
+
+              <span class="arrow">+</span>
+
+              <div class="node">
+                GET /users/123/posts
+              </div>
+
+              <span class="arrow">+</span>
+
+              <div class="node">
+                GET /users/123/followers
+              </div>
+
+            </div>
+
+
+            <div class="flow">
+
+              <div class="node dim">
+                GraphQL
+              </div>
+
+              <span class="arrow">→</span>
+
+              <div class="node accent">
+                POST /graphql
+                <span style="font-weight:400">
+                  — exact fields
+                </span>
+              </div>
+
+            </div>
+
+          </div>
+
+        </div>
+
+      </section>
+
+
+      <hr class="divider">
+
+
+      <!-- ===================================================
+           API PRINCIPLES
+           =================================================== -->
+
+      <section id="api-principles">
+
+        <div class="sec-eyebrow">
+          02 — API Design
+        </div>
+
+        <h2 class="sec-title">
+          Four design principles for a great API
+        </h2>
+
+        <p>
+          The guiding rule:
+          <b>
+            the best API is one developers can use without
+            reading the documentation.
+          </b>
+        </p>
+
+
+        <div class="grid2">
+
+          <div class="card tag-accent">
+
+            <h4>
+              1 · Consistency
+            </h4>
+
+            <p>
+              Consistent naming, casing, and patterns.
+            </p>
+
+          </div>
+
+
+          <div class="card tag-accent">
+
+            <h4>
+              2 · Simplicity
+            </h4>
+
+            <p>
+              Focus on core use cases and minimize complexity.
+            </p>
+
+          </div>
+
+
+          <div class="card tag-teal">
+
+            <h4>
+              3 · Security
+            </h4>
+
+            <p>
+              Authentication, authorization, validation,
+              and rate limiting are baseline requirements.
+            </p>
+
+          </div>
+
+
+          <div class="card tag-teal">
+
+            <h4>
+              4 · Performance
+            </h4>
+
+            <p>
+              Use caching, pagination, minimal payloads,
+              and fewer round trips.
+            </p>
+
+          </div>
+
+        </div>
+
+
+        <div class="callout">
+
+          Protocol choice shapes what is possible:
+          HTTP supports REST verbs and status codes;
+          WebSocket enables real-time bidirectional APIs;
+          gRPC is useful for service-to-service communication.
+
+        </div>
+
+      </section>
+
+
+      <hr class="divider">
+
+
+      <!-- ===================================================
+           API PROCESS
+           =================================================== -->
+
+      <section id="api-process">
+
+        <div class="sec-eyebrow">
+          02 — API Design
+        </div>
+
+        <h2 class="sec-title">
+          The API design process & lifecycle
+        </h2>
+
+
+        <h3 class="sub-title">
+          Design approaches
+        </h3>
+
+
+        <div class="grid3">
+
+          <div class="card">
+
+            <h4>Top-down</h4>
+
+            <p>
+              Start from high-level requirements and workflows.
+            </p>
+
+          </div>
+
+
+          <div class="card">
+
+            <h4>Bottom-up</h4>
+
+            <p>
+              Design around existing data models.
+            </p>
+
+          </div>
+
+
+          <div class="card">
+
+            <h4>Contract-first</h4>
+
+            <p>
+              Define request and response shapes before
+              implementation.
+            </p>
+
+          </div>
+
+        </div>
+
+
+        <h3 class="sub-title">
+          Lifecycle
+        </h3>
+
+
+        <div class="flow">
+
+          <div class="node accent">
+            Design
+          </div>
+
+          <span class="arrow">→</span>
+
+          <div class="node">
+            Development
+          </div>
+
+          <span class="arrow">→</span>
+
+          <div class="node">
+            Deploy & Monitor
+          </div>
+
+          <span class="arrow">→</span>
+
+          <div class="node">
+            Maintenance
+          </div>
+
+          <span class="arrow">→</span>
+
+          <div class="node dim">
+            Deprecation
+          </div>
+
+        </div>
+
+
+        <p style="margin-top:10px;">
+          Requirements gathering happens up front:
+          identify use cases, scope boundaries, performance
+          targets, and security constraints before code is written.
+        </p>
+
+      </section>
+
+
+      <hr class="divider">
+
+
+      <!-- ===================================================
+           PROTOCOLS
+           =================================================== -->
+
+      <section id="protocols">
+
+        <div class="sec-eyebrow">
+          03 — Protocols
+        </div>
+
+        <h2 class="sec-title">
+          Application-layer protocols
+        </h2>
+
+        <p>
+          Application protocols sit above TCP/UDP and define
+          message formats, request/response patterns,
+          and connection handling.
+        </p>
+
+
+        <h3 class="sub-title">
+          HTTP & HTTPS
+        </h3>
+
+
+        <div class="diagram">
+
+          <div class="diagram-title">
+            Anatomy of an HTTP exchange
+          </div>
+
+
+          <div class="grid2" style="margin:0;">
+
+            <div>
+
+              <div style="font-size:.78rem;color:var(--ink-faint);margin-bottom:6px;">
+                Request
+              </div>
+
+              <pre class="code" style="margin:0;">GET /api/products/123 HTTP/1.1
+Host: app.demo.com
+Authorization: Bearer &lt;token&gt;</pre>
+
+            </div>
+
+
+            <div>
+
+              <div style="font-size:.78rem;color:var(--ink-faint);margin-bottom:6px;">
+                Response
+              </div>
+
+              <pre class="code" style="margin:0;">HTTP/1.1 200 OK
+Content-Type: application/json
+
+{ "id": 123, "name": "..." }</pre>
+
+            </div>
+
+          </div>
+
+        </div>
+
+
+        <p>
+          <b>HTTPS</b> = HTTP + TLS encryption.
+          It protects data in transit and provides integrity
+          and authentication.
+        </p>
+
+
+        <h3 class="sub-title">
+          WebSocket — real-time, bidirectional data
+        </h3>
+
+
+        <div class="diagram">
+
+          <div class="diagram-title">
+            Polling vs WebSocket
+          </div>
+
+
+          <div class="flow-vert">
+
+            <div class="flow">
+
+              <div class="node dim">
+                HTTP polling
+              </div>
+
+              <span class="arrow">→</span>
+
+              <div class="node">
+                Request every N seconds
+              </div>
+
+            </div>
+
+
+            <div class="flow">
+
+              <div class="node accent">
+                WebSocket
+              </div>
+
+              <span class="arrow">→</span>
+
+              <div class="node">
+                Server pushes data instantly
+              </div>
+
+            </div>
+
+          </div>
+
+        </div>
+
+
+        <p>
+          WebSocket is ideal for chat, live notifications,
+          collaborative applications, and streaming.
+        </p>
+
+
+        <h3 class="sub-title">
+          AMQP — asynchronous messaging
+        </h3>
+
+
+        <div class="diagram">
+
+          <div class="diagram-title">
+            Producer → Queue → Consumer
+          </div>
+
+          <div class="flow">
+
+            <div class="node dim">
+              Producer
+            </div>
+
+            <span class="arrow">→</span>
+
+            <div class="node accent">
+              Message Queue
+            </div>
+
+            <span class="arrow">→</span>
+
+            <div class="node teal">
+              Consumer
+            </div>
+
+          </div>
+
+        </div>
+
+
+        <p>
+          The consumer pulls messages whenever it has capacity,
+          decoupling producer speed from consumer speed.
+        </p>
+
+
+        <h3 class="sub-title">
+          gRPC
+        </h3>
+
+        <p>
+          Google's high-performance RPC framework built on
+          HTTP/2 and protocol buffers, with native streaming
+          support. It is mainly used server-to-server,
+          especially between microservices.
+        </p>
+
+
+        <table>
+
+          <thead>
+            <tr>
+              <th>Need</th>
+              <th>Protocol</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+            <tr>
+              <td>Simple request/response</td>
+              <td>HTTP</td>
+            </tr>
+
+            <tr>
+              <td>Real-time / chat / live updates</td>
+              <td>WebSocket</td>
+            </tr>
+
+            <tr>
+              <td>Asynchronous background processing</td>
+              <td>AMQP</td>
+            </tr>
+
+            <tr>
+              <td>Fast internal microservice calls</td>
+              <td>gRPC</td>
+            </tr>
+
+          </tbody>
+
+        </table>
+
+      </section>
+
+
+      <hr class="divider">
+
+
+      <!-- ===================================================
+           TRANSPORT
+           =================================================== -->
+
+      <section id="transport">
+
+        <div class="sec-eyebrow">
+          03 — Protocols
+        </div>
+
+        <h2 class="sec-title">
+          Transport layer: TCP vs UDP
+        </h2>
+
+        <p>
+          Below the application layer sits the transport layer —
+          the protocols that move packets across the network.
+        </p>
+
+
+        <div class="diagram">
+
+          <div class="diagram-title">
+            TCP three-way handshake
+          </div>
+
+
+          <div class="steps">
+
+            <div class="step">
+
+              <h4>SYN</h4>
+
+              <p>
+                Client sends a connection request.
+              </p>
+
+            </div>
+
+
+            <div class="step">
+
+              <h4>SYN-ACK</h4>
+
+              <p>
+                Server acknowledges and responds.
+              </p>
+
+            </div>
+
+
+            <div class="step">
+
+              <h4>ACK</h4>
+
+              <p>
+                Client acknowledges and the connection is established.
+              </p>
+
+            </div>
+
+          </div>
+
+        </div>
+
+
+        <table>
+
+          <thead>
+
+            <tr>
+              <th></th>
+              <th>TCP</th>
+              <th>UDP</th>
+            </tr>
+
+          </thead>
+
+          <tbody>
+
+            <tr>
+
+              <td>Delivery</td>
+
+              <td>
+                Guaranteed and ordered.
+              </td>
+
+              <td>
+                Not guaranteed.
+              </td>
+
+            </tr>
+
+            <tr>
+
+              <td>Connection</td>
+
+              <td>
+                Connection-based.
+              </td>
+
+              <td>
+                Connectionless.
+              </td>
+
+            </tr>
+
+            <tr>
+
+              <td>Speed</td>
+
+              <td>
+                More overhead.
+              </td>
+
+              <td>
+                Faster and lightweight.
+              </td>
+
+            </tr>
+
+            <tr>
+
+              <td>Best for</td>
+
+              <td>
+                Banking, payments, authentication, APIs.
+              </td>
+
+              <td>
+                Video calls, streaming, games.
+              </td>
+
+            </tr>
+
+          </tbody>
+
+        </table>
+
+
+        <div class="callout ok">
+
+          <b>Rule of thumb:</b>
+          if losing a packet would corrupt correctness,
+          use TCP. If losing a packet only causes a minor
+          visual/audio glitch, UDP may be appropriate.
+
+        </div>
+
+      </section>
+
+
+      <hr class="divider">
+
+
+      <!-- ===================================================
+           REST
+           =================================================== -->
+
+      <section id="rest">
+
+        <div class="sec-eyebrow">
+          04 — Deep Dive
+        </div>
+
+        <h2 class="sec-title">
+          Designing RESTful APIs
+        </h2>
+
+
+        <h3 class="sub-title">
+          Resource modeling
+        </h3>
+
+        <p>
+          Model your business domain as <b>nouns, not verbs</b>:
+          <code>products</code>, <code>orders</code>,
+          <code>reviews</code>.
+        </p>
+
+
+        <table>
+
+          <thead>
+
+            <tr>
+              <th>Request</th>
+              <th>Meaning</th>
+            </tr>
+
+          </thead>
+
+          <tbody>
+
+            <tr>
+              <td>
+                <code>GET /api/products</code>
+              </td>
+
+              <td>
+                Collection of products.
+              </td>
+            </tr>
+
+            <tr>
+              <td>
+                <code>GET /api/products/123</code>
+              </td>
+
+              <td>
+                Single product.
+              </td>
+            </tr>
+
+            <tr>
+              <td>
+                <code>GET /api/products/123/reviews</code>
+              </td>
+
+              <td>
+                Reviews for that product.
+              </td>
+            </tr>
+
+          </tbody>
+
+        </table>
+
+
+        <h3 class="sub-title">
+          Filtering, sorting & pagination
+        </h3>
+
+
+        <pre class="code">GET /products?category=electronics&amp;inStock=true
+GET /products?sort=price_asc
+GET /products?page=2&amp;limit=10
+GET /products?offset=20&amp;limit=10
+GET /products?cursor=eyJpZCI6MTAwfQ</pre>
+
+
+        <p>
+          Pagination keeps responses small, saves bandwidth,
+          and prevents the frontend from fetching unnecessary data.
+        </p>
+
+
+        <h3 class="sub-title">
+          CRUD via HTTP methods
+        </h3>
+
+
+        <table>
+
+          <thead>
+
+            <tr>
+              <th>Method</th>
+              <th>Purpose</th>
+              <th>Idempotent?</th>
+              <th>Example</th>
+            </tr>
+
+          </thead>
+
+          <tbody>
+
+            <tr>
+              <td><code>GET</code></td>
+              <td>Read</td>
+              <td>Yes</td>
+              <td><code>GET /products</code></td>
+            </tr>
+
+            <tr>
+              <td><code>POST</code></td>
+              <td>Create</td>
+              <td>No</td>
+              <td><code>POST /products</code></td>
+            </tr>
+
+            <tr>
+              <td><code>PUT</code></td>
+              <td>Full update</td>
+              <td>Yes</td>
+              <td><code>PUT /products/123</code></td>
+            </tr>
+
+            <tr>
+              <td><code>PATCH</code></td>
+              <td>Partial update</td>
+              <td>Yes*</td>
+              <td><code>PATCH /products/123</code></td>
+            </tr>
+
+            <tr>
+              <td><code>DELETE</code></td>
+              <td>Remove</td>
+              <td>Yes</td>
+              <td><code>DELETE /products/123</code></td>
+            </tr>
+
+          </tbody>
+
+        </table>
+
+
+        <h3 class="sub-title">
+          Status codes
+        </h3>
+
+
+        <table>
+
+          <thead>
+
+            <tr>
+              <th>Range</th>
+              <th>Meaning</th>
+              <th>Common codes</th>
+            </tr>
+
+          </thead>
+
+          <tbody>
+
+            <tr>
+              <td>
+                <span class="badge g2">2xx</span>
+              </td>
+
+              <td>Success</td>
+
+              <td>
+                200 OK · 201 Created · 204 No Content
+              </td>
+            </tr>
+
+            <tr>
+              <td>
+                <span class="badge g3">3xx</span>
+              </td>
+
+              <td>Redirection</td>
+
+              <td>
+                301 Moved Permanently
+              </td>
+            </tr>
+
+            <tr>
+              <td>
+                <span class="badge g4">4xx</span>
+              </td>
+
+              <td>Client error</td>
+
+              <td>
+                400 · 401 · 404
+              </td>
+            </tr>
+
+            <tr>
+              <td>
+                <span class="badge g5">5xx</span>
+              </td>
+
+              <td>Server error</td>
+
+              <td>
+                500 Internal Server Error
+              </td>
+            </tr>
+
+          </tbody>
+
+        </table>
+
+
+        <h3 class="sub-title">
+          Best practices checklist
+        </h3>
+
+
+        <ul>
+
+          <li>
+            Use <b>plural nouns</b> for resources.
+          </li>
+
+          <li>
+            Use the <b>correct HTTP method</b>.
+          </li>
+
+          <li>
+            Support <b>filtering, sorting, and pagination</b>.
+          </li>
+
+          <li>
+            Version your API explicitly.
+          </li>
+
+        </ul>
+
+      </section>
+
+
+      <hr class="divider">
+
+
+      <!-- ===================================================
+           GRAPHQL
+           =================================================== -->
+
+      <section id="graphql">
+
+        <div class="sec-eyebrow">
+          04 — Deep Dive
+        </div>
+
+        <h2 class="sec-title">
+          Designing GraphQL APIs
+        </h2>
+
+        <p>
+          GraphQL solves REST's over-fetching and under-fetching
+          problem by allowing clients to describe exactly the
+          data they need.
+        </p>
+
+
+        <h3 class="sub-title">
+          Schema & type system
+        </h3>
+
+
+        <pre class="code"><span class="k">type</span> User {
+  id: ID!
+  name: String!
+  posts: [Post!]!
+}
+
+<span class="k">type</span> Query {
+  user(id: ID!): User
+}
+
+<span class="k">type</span> Mutation {
+  createUser(name: String!): User
+}</pre>
+
+
+        <h3 class="sub-title">
+          A query in action
+        </h3>
+
+
+        <pre class="code"><span class="k">query</span> {
+  user(id: <span class="s">"123"</span>) {
+    name
+    posts { title }
+    followers { name }
+  }
+}</pre>
+
+
+        <p>
+          One request can return exactly the fields required.
+        </p>
+
+
+        <h3 class="sub-title">
+          Error handling
+        </h3>
+
+        <p>
+          GraphQL commonly returns a response containing
+          both <code>data</code> and an <code>errors</code>
+          array when something fails.
+        </p>
+
+
+        <pre class="code">{
+  <span class="s">"data"</span>: {
+    <span class="s">"user"</span>: <span class="k">null</span>
+  },
+  <span class="s">"errors"</span>: [
+    {
+      <span class="s">"statusCode"</span>: 404,
+      <span class="s">"message"</span>: <span class="s">"Not found"</span>
+    }
+  ]
+}</pre>
+
+
+        <h3 class="sub-title">
+          Best practices
+        </h3>
+
+
+        <ul>
+
+          <li>
+            Keep schemas <b>small and modular</b>.
+          </li>
+
+          <li>
+            Limit <b>query nesting depth</b>.
+          </li>
+
+          <li>
+            Use meaningful names.
+          </li>
+
+          <li>
+            Use dedicated <b>input types</b>.
+          </li>
+
+        </ul>
+
+
+        <h3 class="sub-title">
+          REST vs GraphQL
+        </h3>
+
+
+        <table>
+
+          <thead>
+
+            <tr>
+              <th></th>
+              <th>REST</th>
+              <th>GraphQL</th>
+            </tr>
+
+          </thead>
+
+          <tbody>
+
+            <tr>
+              <td>Endpoints</td>
+              <td>Many</td>
+              <td>One</td>
+            </tr>
+
+            <tr>
+              <td>Response shape</td>
+              <td>Fixed</td>
+              <td>Client-defined</td>
+            </tr>
+
+            <tr>
+              <td>Related data</td>
+              <td>Often multiple requests</td>
+              <td>One request</td>
+            </tr>
+
+            <tr>
+              <td>Versioning</td>
+              <td>Often explicit</td>
+              <td>Schema evolution</td>
+            </tr>
+
+            <tr>
+              <td>Caching</td>
+              <td>HTTP caching</td>
+              <td>Application-level caching</td>
+            </tr>
+
+          </tbody>
+
+        </table>
+
+      </section>
+
+
+      <hr class="divider">
+
+
+      <!-- ===================================================
+           AUTHENTICATION
+           =================================================== -->
+
+      <section id="auth">
+
+        <div class="sec-eyebrow">
+          05 — Identity & Security
+        </div>
+
+        <h2 class="sec-title">
+          Authentication — proving who you are
+        </h2>
+
+        <p>
+          Authentication answers:
+          <b>who is making this request?</b>
+          It happens before authorization.
+        </p>
+
+
+        <h3 class="sub-title">
+          Authentication methods
+        </h3>
+
+
+        <div class="diagram">
+
+          <div class="flow">
+
+            <div class="node dim">
+              Basic Auth
+            </div>
+
+            <span class="arrow">→</span>
+
+            <div class="node dim">
+              API Keys
+            </div>
+
+            <span class="arrow">→</span>
+
+            <div class="node dim">
+              Sessions
+            </div>
+
+            <span class="arrow">→</span>
+
+            <div class="node accent">
+              Bearer / JWT
+            </div>
+
+            <span class="arrow">→</span>
+
+            <div class="node teal">
+              OAuth 2.0 / OIDC
+            </div>
+
+            <span class="arrow">→</span>
+
+            <div class="node teal">
+              SSO
+            </div>
+
+          </div>
+
+        </div>
+
+
+        <table>
+
+          <thead>
+
+            <tr>
+              <th>Method</th>
+              <th>How it works</th>
+              <th>Note</th>
+            </tr>
+
+          </thead>
+
+          <tbody>
+
+            <tr>
+              <td>Basic Auth</td>
+              <td>
+                Username/password sent with each request.
+              </td>
+              <td>
+                Must use HTTPS.
+              </td>
+            </tr>
+
+            <tr>
+              <td>API Keys</td>
+              <td>
+                Unique key issued per client.
+              </td>
+              <td>
+                Protect keys carefully.
+              </td>
+            </tr>
+
+            <tr>
+              <td>Session-based</td>
+              <td>
+                Server stores session state.
+              </td>
+              <td>
+                Stateful.
+              </td>
+            </tr>
+
+            <tr>
+              <td>Bearer / JWT</td>
+              <td>
+                Signed token carries claims.
+              </td>
+              <td>
+                Commonly stateless.
+              </td>
+            </tr>
+
+          </tbody>
+
+        </table>
+
+
+        <div class="callout warn">
+
+          <b>Important:</b>
+          JWT is a token format. OAuth 2.0 is an authorization
+          framework. OpenID Connect adds an authentication
+          identity layer on top of OAuth 2.0.
+
+        </div>
+
+
+        <h3 class="sub-title">
+          Access tokens + refresh tokens
+        </h3>
+
+
+        <div class="grid2">
+
+          <div class="card">
+
+            <h4>
+              Access token
+            </h4>
+
+            <p>
+              Short-lived and sent with API requests.
+            </p>
+
+          </div>
+
+
+          <div class="card">
+
+            <h4>
+              Refresh token
+            </h4>
+
+            <p>
+              Longer-lived token used to obtain a new
+              access token.
+            </p>
+
+          </div>
+
+        </div>
+
+
+        <h3 class="sub-title">
+          OAuth 2.0 vs OpenID Connect
+        </h3>
+
+
+        <div class="diagram">
+
+          <div class="flow-vert">
+
+            <div class="flow">
+
+              <div class="node dim">
+                OAuth 2.0
+              </div>
+
+              <span class="arrow">→</span>
+
+              <div class="node">
+                Delegated authorization
+              </div>
+
+            </div>
+
+
+            <div class="flow">
+
+              <div class="node accent">
+                OpenID Connect
+              </div>
+
+              <span class="arrow">→</span>
+
+              <div class="node">
+                Authentication + identity
+              </div>
+
+            </div>
+
+          </div>
+
+        </div>
+
+
+        <h3 class="sub-title">
+          Single Sign-On
+        </h3>
+
+        <p>
+          SSO allows users to authenticate once with an identity
+          provider and access multiple applications.
+        </p>
+
+      </section>
+
+
+      <hr class="divider">
+
+
+      <!-- ===================================================
+           AUTHORIZATION
+           =================================================== -->
+
+      <section id="authz">
+
+        <div class="sec-eyebrow">
+          05 — Identity & Security
+        </div>
+
+        <h2 class="sec-title">
+          Authorization — controlling what you can do
+        </h2>
+
+        <p>
+          Once identity is confirmed, authorization decides
+          which resources and actions that identity can access.
+        </p>
+
+
+        <div class="grid3">
+
+          <div class="card tag-accent">
+
+            <h4>
+              RBAC — Role-Based
+            </h4>
+
+            <p>
+              Users are assigned roles such as admin,
+              editor, or viewer.
+            </p>
+
+          </div>
+
+
+          <div class="card tag-accent">
+
+            <h4>
+              ABAC — Attribute-Based
+            </h4>
+
+            <p>
+              Access is based on user, resource, device,
+              location, time, or other attributes.
+            </p>
+
+          </div>
+
+
+          <div class="card tag-accent">
+
+            <h4>
+              ACL — Access Control List
+            </h4>
+
+            <p>
+              Each resource maintains its own permission list.
+            </p>
+
+          </div>
+
+        </div>
+
+
+        <h3 class="sub-title">
+          Delegated authorization
+        </h3>
+
+
+        <div class="diagram">
+
+          <div class="steps">
+
+            <div class="step">
+
+              <h4>
+                Request access
+              </h4>
+
+              <p>
+                A third-party application requests permission.
+              </p>
+
+            </div>
+
+
+            <div class="step">
+
+              <h4>
+                Consent & scope
+              </h4>
+
+              <p>
+                The user chooses what the application can do.
+              </p>
+
+            </div>
+
+
+            <div class="step">
+
+              <h4>
+                Token issued
+              </h4>
+
+              <p>
+                The provider issues a token representing
+                the granted permissions.
+              </p>
+
+            </div>
+
+          </div>
+
+        </div>
+
+
+        <p>
+          Tokens carry identity and claims. The authorization
+          model — RBAC, ABAC, or ACL — determines what those
+          claims are allowed to do.
+        </p>
+
+      </section>
+
+
+      <hr class="divider">
+
+
+      <!-- ===================================================
+           SECURITY
+           =================================================== -->
+
+      <section id="security">
+
+        <div class="sec-eyebrow">
+          05 — Identity & Security
+        </div>
+
+        <h2 class="sec-title">
+          Seven techniques to protect your APIs
+        </h2>
+
+        <p>
+          APIs are doors into your system. They need multiple
+          layers of protection.
+        </p>
+
+
+        <div class="algo-grid">
+
+          <div class="algo-card">
+
+            <div class="algo-num">01</div>
+
+            <h4>
+              Rate limiting
+            </h4>
+
+            <p>
+              Limit requests per user, IP, endpoint, or system.
+            </p>
+
+          </div>
+
+
+          <div class="algo-card">
+
+            <div class="algo-num">02</div>
+
+            <h4>
+              CORS
+            </h4>
+
+            <p>
+              Controls which browser origins can call your API.
+            </p>
+
+          </div>
+
+
+          <div class="algo-card">
+
+            <div class="algo-num">03</div>
+
+            <h4>
+              Injection defense
+            </h4>
+
+            <p>
+              Use parameterized queries or safe ORM mechanisms.
+            </p>
+
+          </div>
+
+
+          <div class="algo-card">
+
+            <div class="algo-num">04</div>
+
+            <h4>
+              Firewalls / WAF
+            </h4>
+
+            <p>
+              Block suspicious traffic and known attack patterns.
+            </p>
+
+          </div>
+
+
+          <div class="algo-card">
+
+            <div class="algo-num">05</div>
+
+            <h4>
+              VPNs for private APIs
+            </h4>
+
+            <p>
+              Restrict internal APIs to trusted networks.
+            </p>
+
+          </div>
+
+
+          <div class="algo-card">
+
+            <div class="algo-num">06</div>
+
+            <h4>
+              CSRF protection
+            </h4>
+
+            <p>
+              Prevent malicious websites from abusing
+              authenticated browser sessions.
+            </p>
+
+          </div>
+
+
+          <div class="algo-card">
+
+            <div class="algo-num">07</div>
+
+            <h4>
+              XSS prevention
+            </h4>
+
+            <p>
+              Escape and sanitize user-generated content
+              before rendering it.
+            </p>
+
+          </div>
+
+        </div>
+
+
+        <div class="callout warn">
+
+          <b>Security reminder:</b>
+          API security should be implemented in layers.
+          Authentication alone does not make an API secure.
+
+        </div>
+
+      </section>
+
+
+      <!-- ===================================================
+           FOOTER
+           =================================================== -->
+
+      <footer>
+
+        <p>
+          Notes compiled for personal study. This page is
+          intentionally editable and can be used as a personal
+          System Design knowledge base.
+        </p>
+
+      </footer>
+
+
+    </div>
+
+  </main>
+
+</div>
+
+
+<!-- =========================================================
+     JAVASCRIPT — EDITOR ENGINE
+     ========================================================= -->
+
+<script>
+
+/*
+==============================================================
+  SYSTEM DESIGN NOTES — EDITOR ENGINE
+==============================================================
+
+  Main concepts used:
+
+  1. contenteditable
+  2. DOM manipulation
+  3. Selection / Range API
+  4. localStorage
+  5. document.execCommand
+  6. Blob + download
+==============================================================
+*/
+
+
+const editor =
+  document.getElementById("editableArea");
+
+const toolbar =
+  document.getElementById("editorToolbar");
+
+
+/*
+--------------------------------------------------------------
+  STORAGE
+--------------------------------------------------------------
+*/
+
+const STORAGE_KEY =
+  "system-design-notes-editable-v1";
+
+
+/*
+  Keep a copy of the original content.
+
+  This allows the Reset button to restore the
+  original notes.
+*/
+
+const originalContent =
+  editor.innerHTML;
+
+
+/*
+--------------------------------------------------------------
+  SELECTION
+--------------------------------------------------------------
+
+  When the user selects text and then clicks a toolbar button,
+  the browser may remove the selection.
+
+  We therefore save the selection first.
+--------------------------------------------------------------
+*/
+
+let savedRange = null;
+
+
+function saveSelection(){
+
+  const selection =
+    window.getSelection();
+
+  if(!selection.rangeCount){
+    return;
+  }
+
+  const range =
+    selection.getRangeAt(0);
+
+  if(
+    editor.contains(
+      range.commonAncestorContainer
+    )
+  ){
+
+    savedRange =
+      range.cloneRange();
+
+  }
+
+}
+
+
+function restoreSelection(){
+
+  if(!savedRange){
+    return;
+  }
+
+  const selection =
+    window.getSelection();
+
+  selection.removeAllRanges();
+
+  selection.addRange(
+    savedRange
+  );
+
+}
+
+
+/*
+  Save selection whenever the user clicks or types.
+*/
+
+editor.addEventListener(
+  "mouseup",
+  saveSelection
+);
+
+editor.addEventListener(
+  "keyup",
+  saveSelection
+);
+
+editor.addEventListener(
+  "input",
+  saveSelection
+);
+
+
+/*
+--------------------------------------------------------------
+  TOOLBAR MOUSE BEHAVIOR
+--------------------------------------------------------------
+
+  Prevent toolbar buttons from stealing the selected text.
+--------------------------------------------------------------
+*/
+
+toolbar.addEventListener(
+  "mousedown",
+  function(event){
+
+    if(
+      event.target.tagName === "BUTTON"
+    ){
+
+      event.preventDefault();
+
+    }
+
+  }
+);
+
+
+/*
+--------------------------------------------------------------
+  FIND CURRENT BLOCK
+--------------------------------------------------------------
+
+  Example:
+
+      <p>Hello</p>
+
+  or:
+
+      <h2>Database</h2>
+
+  or:
+
+      <li>SQL</li>
+
+  This function determines which block the cursor is inside.
+--------------------------------------------------------------
+*/
+
+function getCurrentBlock(){
+
+  restoreSelection();
+
+  const selection =
+    window.getSelection();
+
+  if(!selection.rangeCount){
+    return null;
+  }
+
+  let node =
+    selection.anchorNode;
+
+
+  /*
+    If cursor is inside a text node,
+    move up to the HTML element.
+  */
+
+  if(
+    node.nodeType ===
+    Node.TEXT_NODE
+  ){
+
+    node =
+      node.parentElement;
+
+  }
+
+
+  const block =
+    node.closest(
+      "p,h1,h2,h3,h4,h5,h6,li"
+    );
+
+
+  /*
+    Make sure this block belongs
+    to our editable notes area.
+  */
+
+  if(
+    block &&
+    editor.contains(block)
+  ){
+
+    return block;
+
+  }
+
+  return null;
+
+}
+
+
+/*
+--------------------------------------------------------------
+  GET HEADING LEVEL
+--------------------------------------------------------------
+*/
+
+function getHeadingLevel(element){
+
+  if(!element){
+    return null;
+  }
+
+  const match =
+    element.tagName.match(
+      /^H([1-6])$/
+    );
+
+  return match
+    ? Number(match[1])
+    : null;
+
+}
+
+
+/*
+--------------------------------------------------------------
+  PLACE CURSOR
+--------------------------------------------------------------
+*/
+
+function placeCursorAtStart(element){
+
+  const range =
+    document.createRange();
+
+  range.selectNodeContents(
+    element
+  );
+
+  range.collapse(true);
+
+  const selection =
+    window.getSelection();
+
+  selection.removeAllRanges();
+
+  selection.addRange(
+    range
+  );
+
+  savedRange =
+    range.cloneRange();
+
+  element.focus();
+
+}
+
+
+/*
+--------------------------------------------------------------
+  CHANGE HEADING LEVEL
+--------------------------------------------------------------
+
+  H2 → H3
+  H3 → H4
+
+  or
+
+  H4 → H3
+  H3 → H2
+--------------------------------------------------------------
+*/
+
+function changeHeadingLevel(
+  element,
+  newLevel
+){
+
+  if(!element){
+    return;
+  }
+
+
+  const newTag =
+    "h" + newLevel;
+
+
+  const replacement =
+    document.createElement(
+      newTag
+    );
+
+
+  replacement.innerHTML =
+    element.innerHTML;
+
+
+  /*
+    Keep classes such as sub-title.
+  */
+
+  for(
+    const attr of element.attributes
+  ){
+
+    if(attr.name !== "id"){
+
+      replacement.setAttribute(
+        attr.name,
+        attr.value
+      );
+
+    }
+
+  }
+
+
+  element.replaceWith(
+    replacement
+  );
+
+
+  placeCursorAtStart(
+    replacement
+  );
+
+
+  save();
+
+}
+
+
+/*
+--------------------------------------------------------------
+  ADD HEADING
+--------------------------------------------------------------
+*/
+
+function addHeading(){
+
+  const block =
+    getCurrentBlock();
+
+
+  if(!block){
+
+    alert(
+      "Click inside a paragraph or heading first."
+    );
+
+    return;
+
+  }
+
+
+  const heading =
+    document.createElement(
+      "h2"
+    );
+
+
+  heading.className =
+    "sub-title";
+
+
+  heading.textContent =
+    "New Heading";
+
+
+  block.after(
+    heading
+  );
+
+
+  placeCursorAtStart(
+    heading
+  );
+
+
+  save();
+
+}
+
+
+/*
+--------------------------------------------------------------
+  REMOVE HEADING
+--------------------------------------------------------------
+
+  H2 → P
+  H3 → P
+  etc.
+--------------------------------------------------------------
+*/
+
+function removeHeading(){
+
+  const block =
+    getCurrentBlock();
+
+
+  if(!block){
+    return;
+  }
+
+
+  const level =
+    getHeadingLevel(
+      block
+    );
+
+
+  if(!level){
+
+    alert(
+      "The cursor is not inside a heading."
+    );
+
+    return;
+
+  }
+
+
+  const paragraph =
+    document.createElement(
+      "p"
+    );
+
+
+  paragraph.innerHTML =
+    block.innerHTML;
+
+
+  block.replaceWith(
+    paragraph
+  );
+
+
+  placeCursorAtStart(
+    paragraph
+  );
+
+
+  save();
+
+}
+
+
+/*
+--------------------------------------------------------------
+  HEADING UP
+--------------------------------------------------------------
+
+  H4 → H3
+  H3 → H2
+  H2 → H1
+--------------------------------------------------------------
+*/
+
+function headingUp(){
+
+  const block =
+    getCurrentBlock();
+
+
+  if(!block){
+
+    alert(
+      "Click inside a heading first."
+    );
+
+    return;
+
+  }
+
+
+  const level =
+    getHeadingLevel(
+      block
+    );
+
+
+  /*
+    If the current block is a paragraph,
+    convert it into H3.
+  */
+
+  if(!level){
+
+    const replacement =
+      document.createElement(
+        "h3"
+      );
+
+    replacement.className =
+      "sub-title";
+
+    replacement.innerHTML =
+      block.innerHTML;
+
+    block.replaceWith(
+      replacement
+    );
+
+    placeCursorAtStart(
+      replacement
+    );
+
+    save();
+
+    return;
+
+  }
+
+
+  if(level > 1){
+
+    changeHeadingLevel(
+      block,
+      level - 1
+    );
+
+  }
+
+}
+
+
+/*
+--------------------------------------------------------------
+  HEADING DOWN
+--------------------------------------------------------------
+
+  H1 → H2
+  H2 → H3
+  H3 → H4
+  etc.
+--------------------------------------------------------------
+*/
+
+function headingDown(){
+
+  const block =
+    getCurrentBlock();
+
+
+  if(!block){
+
+    alert(
+      "Click inside a heading first."
+    );
+
+    return;
+
+  }
+
+
+  const level =
+    getHeadingLevel(
+      block
+    );
+
+
+  if(!level){
+    return;
+  }
+
+
+  if(level < 6){
+
+    changeHeadingLevel(
+      block,
+      level + 1
+    );
+
+  }
+
+}
+
+
+/*
+--------------------------------------------------------------
+  ADD NEW LINE
+--------------------------------------------------------------
+
+  Adds a paragraph after the current block.
+--------------------------------------------------------------
+*/
+
+function addLine(){
+
+  const block =
+    getCurrentBlock();
+
+
+  if(!block){
+
+    alert(
+      "Click inside a paragraph or heading first."
+    );
+
+    return;
+
+  }
+
+
+  const paragraph =
+    document.createElement(
+      "p"
+    );
+
+
+  paragraph.textContent =
+    "New note...";
+
+
+  block.after(
+    paragraph
+  );
+
+
+  placeCursorAtStart(
+    paragraph
+  );
+
+
+  save();
+
+}
+
+
+/*
+--------------------------------------------------------------
+  REMOVE CURRENT LINE
+--------------------------------------------------------------
+*/
+
+function removeLine(){
+
+  const block =
+    getCurrentBlock();
+
+
+  if(!block){
+
+    alert(
+      "Click inside a paragraph, heading, or list item first."
+    );
+
+    return;
+
+  }
+
+
+  const blocks =
+    editor.querySelectorAll(
+      "p,h1,h2,h3,h4,h5,h6,li"
+    );
+
+
+  /*
+    Prevent deleting the final block.
+  */
+
+  if(blocks.length <= 1){
+
+    alert(
+      "You cannot remove the last editable block."
+    );
+
+    return;
+
+  }
+
+
+  const previous =
+    block.previousElementSibling;
+
+
+  block.remove();
+
+
+  if(previous){
+
+    placeCursorAtStart(
+      previous
+    );
+
+  }
+
+
+  save();
+
+}
+
+
+/*
+--------------------------------------------------------------
+  BOLD / ITALIC
+--------------------------------------------------------------
+*/
+
+function format(command){
+
+  restoreSelection();
+
+
+  document.execCommand(
+    command,
+    false,
+    null
+  );
+
+
+  editor.focus();
+
+
+  save();
+
+}
+
+
+/*
+--------------------------------------------------------------
+  CODE FORMATTING
+--------------------------------------------------------------
+
+  Select:
+
+      hello world
+
+  Click </>
+
+  Result:
+
+      <code>hello world</code>
+--------------------------------------------------------------
+*/
+
+function formatCode(){
+
+  restoreSelection();
+
+
+  const selection =
+    window.getSelection();
+
+
+  if(
+    !selection.rangeCount ||
+    selection.isCollapsed
+  ){
+
+    alert(
+      "Select some text first."
+    );
+
+    return;
+
+  }
+
+
+  const range =
+    selection.getRangeAt(0);
+
+
+  const code =
+    document.createElement(
+      "code"
+    );
+
+
+  code.textContent =
+    selection.toString();
+
+
+  range.deleteContents();
+
+  range.insertNode(
+    code
+  );
+
+
+  save();
+
+}
+
+
+/*
+--------------------------------------------------------------
+  SAVE
+--------------------------------------------------------------
+*/
+
+function save(){
+
+  localStorage.setItem(
+    STORAGE_KEY,
+    editor.innerHTML
+  );
+
+}
+
+
+/*
+--------------------------------------------------------------
+  LOAD SAVED NOTES
+--------------------------------------------------------------
+*/
+
+function loadSaved(){
+
+  const saved =
+    localStorage.getItem(
+      STORAGE_KEY
+    );
+
+
+  if(saved){
+
+    editor.innerHTML =
+      saved;
+
+  }
+
+}
+
+
+/*
+--------------------------------------------------------------
+  RESET
+--------------------------------------------------------------
+*/
+
+function resetNotes(){
+
+  const confirmed =
+    confirm(
+      "Reset all notes to the original content? Your saved changes will be lost."
+    );
+
+
+  if(!confirmed){
+    return;
+  }
+
+
+  editor.innerHTML =
+    originalContent;
+
+
+  localStorage.removeItem(
+    STORAGE_KEY
+  );
+
+
+  setupSidebar();
+
+}
+
+
+/*
+--------------------------------------------------------------
+  DOWNLOAD HTML
+--------------------------------------------------------------
+
+  This creates a real .html file containing
+  your current edited notes.
+--------------------------------------------------------------
+*/
+
+function downloadHTML(){
+
+  /*
+    Clone the entire document.
+  */
+
+  const clone =
+    document.documentElement.cloneNode(
+      true
+    );
+
+
+  /*
+    Remove the editor toolbar.
+  */
+
+  const downloadedToolbar =
+    clone.querySelector(
+      "#editorToolbar"
+    );
+
+
+  if(downloadedToolbar){
+
+    downloadedToolbar.remove();
+
+  }
+
+
+  /*
+    Remove contenteditable attributes.
+  */
+
+  const downloadedEditor =
+    clone.querySelector(
+      "#editableArea"
+    );
+
+
+  if(downloadedEditor){
+
+    downloadedEditor.removeAttribute(
+      "contenteditable"
+    );
+
+
+    downloadedEditor.classList.remove(
+      "editable-area"
+    );
+
+
+    downloadedEditor.removeAttribute(
+      "id"
+    );
+
+  }
+
+
+  /*
+    Remove the editor JavaScript from
+    the downloaded file.
+
+    Otherwise the downloaded file would
+    continue behaving like the editor.
+  */
+
+  const scripts =
+    clone.querySelectorAll(
+      "script"
+    );
+
+
+  scripts.forEach(
+    script => script.remove()
+  );
+
+
+  /*
+    Build final HTML.
+  */
+
+  const html =
+    "<!DOCTYPE html>\n" +
+    clone.outerHTML;
+
+
+  /*
+    Convert HTML into a downloadable file.
+  */
+
+  const blob =
+    new Blob(
+      [html],
+      {
+        type:"text/html"
+      }
+    );
+
+
+  const url =
+    URL.createObjectURL(
+      blob
+    );
+
+
+  const link =
+    document.createElement(
+      "a"
+    );
+
+
+  link.href =
+    url;
+
+
+  link.download =
+    "system-design-notes.html";
+
+
+  document.body.appendChild(
+    link
+  );
+
+
+  link.click();
+
+
+  link.remove();
+
+
+  URL.revokeObjectURL(
+    url
+  );
+
+}
+
+
+/*
+--------------------------------------------------------------
+  SIDEBAR
+--------------------------------------------------------------
+*/
+
+function setupSidebar(){
+
+  const links =
+    document.querySelectorAll(
+      ".side-link"
+    );
+
+
+  const sections =
+    Array.from(
+      links
+    ).map(
+      link =>
+        document.querySelector(
+          link.getAttribute(
+            "href"
+          )
+        )
+    );
+
+
+  function onScroll(){
+
+    let idx = 0;
+
+
+    const y =
+      window.scrollY + 100;
+
+
+    sections.forEach(
+      (section,i) => {
+
+        if(
+          section &&
+          section.offsetTop <= y
+        ){
+
+          idx = i;
+
+        }
+
+      }
+    );
+
+
+    links.forEach(
+      link =>
+        link.classList.remove(
+          "active"
+        )
+    );
+
+
+    if(links[idx]){
+
+      links[idx].classList.add(
+        "active"
+      );
+
+    }
+
+  }
+
+
+  window.addEventListener(
+    "scroll",
+    onScroll
+  );
+
+
+  onScroll();
+
+}
+
+
+/*
+--------------------------------------------------------------
+  TOOLBAR BUTTONS
+--------------------------------------------------------------
+*/
+
+toolbar.addEventListener(
+  "click",
+  function(event){
+
+    const button =
+      event.target.closest(
+        "button"
+      );
+
+
+    if(!button){
+      return;
+    }
+
+
+    const action =
+      button.dataset.action;
+
+
+    switch(action){
+
+      case "add-heading":
+
+        addHeading();
+
+        break;
+
+
+      case "remove-heading":
+
+        removeHeading();
+
+        break;
+
+
+      case "heading-up":
+
+        headingUp();
+
+        break;
+
+
+      case "heading-down":
+
+        headingDown();
+
+        break;
+
+
+      case "add-line":
+
+        addLine();
+
+        break;
+
+
+      case "remove-line":
+
+        removeLine();
+
+        break;
+
+
+      case "bold":
+
+        format("bold");
+
+        break;
+
+
+      case "italic":
+
+        format("italic");
+
+        break;
+
+
+      case "code":
+
+        formatCode();
+
+        break;
+
+
+      case "save":
+
+        save();
+
+
+        button.textContent =
+          "✓ Saved";
+
+
+        setTimeout(
+          () => {
+
+            button.textContent =
+              "💾 Save";
+
+          },
+          1200
+        );
+
+        break;
+
+
+      case "reset":
+
+        resetNotes();
+
+        break;
+
+
+      case "download":
+
+        downloadHTML();
+
+        break;
+
+    }
+
+  }
+);
+
+
+/*
+--------------------------------------------------------------
+  KEYBOARD SHORTCUTS
+--------------------------------------------------------------
+*/
+
+editor.addEventListener(
+  "keydown",
+  function(event){
+
+    /*
+      Ctrl + S
+      Cmd + S on Mac
+    */
+
+    if(
+      (event.ctrlKey || event.metaKey) &&
+      event.key.toLowerCase() === "s"
+    ){
+
+      event.preventDefault();
+
+      save();
+
+      return;
+
+    }
+
+
+    /*
+      Ctrl + Enter
+      Cmd + Enter on Mac
+
+      Creates a new paragraph.
+    */
+
+    if(
+      (event.ctrlKey || event.metaKey) &&
+      event.key === "Enter"
+    ){
+
+      event.preventDefault();
+
+      addLine();
+
+    }
+
+  }
+);
+
+
+/*
+--------------------------------------------------------------
+  INITIALIZE
+--------------------------------------------------------------
+*/
+
+loadSaved();
+
+setupSidebar();
+
+</script>
+
+</body>
+</html>
